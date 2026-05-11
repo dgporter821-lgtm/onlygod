@@ -1,81 +1,70 @@
-export const config = {
-  runtime: "edge",
-};
+export default async function handler(req, res) {
+  const TARGET_BASE = (process.env.TARGET_DOMAIN || "").replace(/\/$/, "");
 
-const TARGET_BASE = (process.env.TARGET_DOMAIN || "").replace(/\/$/, "");
-
-const STRIP_HEADERS = new Set([
-  "host", "connection", "keep-alive",
-  "proxy-authenticate", "proxy-authorization",
-  "te", "trailer", "transfer-encoding", "upgrade",
-  "forwarded", "x-forwarded-host", "x-forwarded-proto",
-  "x-forwarded-port",
-]);
-
-export default async function handler(req) {
   if (!TARGET_BASE) {
-    return new Response("Service configuration error", { status: 500 });
+    return res.status(500).send("Service configuration error");
   }
 
   try {
-    const url = new URL(req.url);
+    const url = new URL(req.url, "http://localhost");
     const targetUrl = TARGET_BASE + url.pathname + url.search;
 
-    const headers = new Headers();
+    const STRIP_HEADERS = new Set([
+      "host", "connection", "keep-alive",
+      "proxy-authenticate", "proxy-authorization",
+      "te", "trailer", "transfer-encoding", "upgrade",
+      "forwarded", "x-forwarded-host", "x-forwarded-proto", "x-forwarded-port",
+    ]);
+
+    const headers = {};
     let clientIp = null;
 
-    for (const [key, value] of req.headers) {
+    for (const [key, value] of Object.entries(req.headers)) {
       const k = key.toLowerCase();
       if (STRIP_HEADERS.has(k)) continue;
       if (k.startsWith("x-vercel-")) continue;
       if (k === "x-real-ip") { clientIp = value; continue; }
       if (k === "x-forwarded-for") { if (!clientIp) clientIp = value; continue; }
-      headers.set(k, value);
+      headers[k] = value;
     }
-    if (clientIp) headers.set("x-forwarded-for", clientIp);
+    if (clientIp) headers["x-forwarded-for"] = clientIp;
 
-    const method = req.method;
-    const hasBody = method !== "GET" && method !== "HEAD";
-
-    // ✅ اضافه کردن AbortController برای timeout
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 25000); // 25 ثانیه
+    const timeout = setTimeout(() => controller.abort(), 25000);
 
     const fetchOpts = {
-      method,
+      method: req.method,
       headers,
       redirect: "manual",
-      signal: controller.signal, // ✅
+      signal: controller.signal,
     };
 
-    if (hasBody) {
-      fetchOpts.body = req.body;
-      fetchOpts.duplex = "half";
+    if (req.method !== "GET" && req.method !== "HEAD") {
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      fetchOpts.body = Buffer.concat(chunks);
     }
 
     let upstream;
     try {
       upstream = await fetch(targetUrl, fetchOpts);
     } finally {
-      clearTimeout(timeout); // ✅ همیشه timeout رو پاک کن
+      clearTimeout(timeout);
     }
 
-    const respHeaders = new Headers();
-    for (const [k, v] of upstream.headers) {
+    res.status(upstream.status);
+    for (const [k, v] of upstream.headers.entries()) {
       if (k.toLowerCase() === "transfer-encoding") continue;
-      respHeaders.set(k, v);
+      res.setHeader(k, v);
     }
 
-    return new Response(upstream.body, {
-      status: upstream.status,
-      headers: respHeaders,
-    });
+    const body = await upstream.arrayBuffer();
+    res.send(Buffer.from(body));
 
   } catch (err) {
-    // ✅ خطای timeout رو جدا handle کن
     if (err.name === "AbortError") {
-      return new Response("Gateway timeout", { status: 504 });
+      return res.status(504).send("Gateway timeout");
     }
-    return new Response("Service temporarily unavailable", { status: 502 });
+    return res.status(502).send("Service temporarily unavailable");
   }
 }
