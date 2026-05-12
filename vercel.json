@@ -1,14 +1,5 @@
 {
-  "version": 2,
-  "name": "web-service",
   "rewrites": [
     { "source": "/(.*)", "destination": "/api/index" }
-  ],
-  "trailingSlash": false,
-  "functions": {
-    "api/index.js": {
-      "runtime": "nodejs@20.0.0",
-      "maxDuration": 60
-    }
-  }
+  ]
 }
