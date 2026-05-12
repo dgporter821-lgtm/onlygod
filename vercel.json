@@ -7,7 +7,7 @@
   "trailingSlash": false,
   "functions": {
     "api/index.js": {
-      "runtime": "nodejs@20.x",
+      "runtime": "nodejs@20.0.0",
       "maxDuration": 60
     }
   }
