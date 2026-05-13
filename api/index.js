@@ -2,29 +2,35 @@ export const config = {
   runtime: "edge",
 };
 
-const TARGET_BASE = (process.env.TARGET_DOMAIN || "").replace(/\/$/, "");
-
-const STRIP_HEADERS = new Set([
-  "host", "connection", "keep-alive", "proxy-authenticate",
-  "proxy-authorization", "te", "trailer", "transfer-encoding",
-  "upgrade", "forwarded", "x-forwarded-host", "x-forwarded-proto",
-  "x-forwarded-port", "x-vercel-"
-]);
+const TARGET_BASE = (process.env.TARGET_DOMAIN || "").trim().replace(/\/$/, "");
 
 export default async function handler(req) {
-  if (!TARGET_BASE) {
-    return new Response("Config error", { status: 500 });
+  // === لاگ‌گیری برای دیباگ ===
+  console.log("TARGET_BASE:", TARGET_BASE);
+  console.log("Request Path:", req.url);
+  console.log("Method:", req.method);
+
+  if (!TARGET_BASE || !TARGET_BASE.startsWith("https://")) {
+    console.error("TARGET_DOMAIN is invalid or not set");
+    return new Response("Proxy configuration error: TARGET_DOMAIN missing", { 
+      status: 500,
+      headers: { "content-type": "text/plain" }
+    });
   }
 
   try {
     const url = new URL(req.url);
-    // مهم: path رو حفظ کن
     const targetUrl = TARGET_BASE + url.pathname + url.search;
+
+    console.log("Forwarding to:", targetUrl);
 
     const headers = new Headers();
     for (const [key, value] of req.headers) {
       const k = key.toLowerCase();
-      if (STRIP_HEADERS.has(k) || k.startsWith("x-vercel-")) continue;
+      if (["host", "connection", "keep-alive", "upgrade", "te", "trailer", 
+           "transfer-encoding", "proxy-authorization", "x-vercel-"].includes(k)) {
+        continue;
+      }
       headers.set(key, value);
     }
 
@@ -32,23 +38,28 @@ export default async function handler(req) {
       method: req.method,
       headers,
       redirect: "manual",
-      body: req.body ? req.body : undefined,
-      duplex: req.body ? "half" : undefined,
     };
 
+    if (req.body) {
+      fetchOpts.body = req.body;
+      fetchOpts.duplex = "half";
+    }
+
     const upstream = await fetch(targetUrl, fetchOpts);
+    
+    console.log("Upstream Status:", upstream.status);
 
     const respHeaders = new Headers(upstream.headers);
-    // بعضی هدرهای مشکل‌ساز رو پاک کن
     respHeaders.delete("transfer-encoding");
-    respHeaders.delete("content-encoding"); // اگر مشکلی دیدی
+    respHeaders.delete("content-encoding");
 
     return new Response(upstream.body, {
       status: upstream.status,
       headers: respHeaders,
     });
+
   } catch (err) {
-    console.error(err);
-    return new Response("Proxy Error", { status: 502 });
+    console.error("Proxy Error:", err);
+    return new Response("Proxy Error: " + err.message, { status: 502 });
   }
 }
