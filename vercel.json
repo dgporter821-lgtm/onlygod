@@ -1,5 +1,8 @@
 {
+  "version": 2,
+  "name": "web-service",
   "rewrites": [
-    { "source": "/mypath2025/:path*", "destination": "/api/index" }
-  ]
+    { "source": "/(.*)", "destination": "/api/index" }
+  ],
+  "trailingSlash": false
 }
