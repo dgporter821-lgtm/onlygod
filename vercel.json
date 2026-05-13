@@ -1,10 +1,5 @@
 {
-  "version": 2,
   "rewrites": [
-    {
-      "source": "/mypath2025/:path*",
-      "destination": "/api/index"
-    }
-  ],
-  "trailingSlash": false
+    { "source": "/mypath2025/:path*", "destination": "/api/index" }
+  ]
 }
