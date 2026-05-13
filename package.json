@@ -1,0 +1,7 @@
+{
+  "name": "web-service",
+  "version": "1.0.0",
+  "description": "Lightweight web utility",
+  "private": true,
+  "license": "MIT"
+}
