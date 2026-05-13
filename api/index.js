@@ -5,35 +5,33 @@ export const config = {
 const TARGET_BASE = (process.env.TARGET_DOMAIN || "").trim().replace(/\/$/, "");
 
 export default async function handler(req) {
-  console.log("TARGET_BASE:", TARGET_BASE);
-  console.log("Incoming Path:", req.url);
-  console.log("Incoming Host:", req.headers.get("host"));
+  console.log("→ Path:", req.url);
+  console.log("→ Host from Vercel:", req.headers.get("host"));
 
-  if (!TARGET_BASE || !TARGET_BASE.startsWith("https://")) {
-    return new Response("TARGET_DOMAIN error", { status: 500 });
-  }
+  if (!TARGET_BASE) return new Response("TARGET_DOMAIN missing", { status: 500 });
 
   try {
     const url = new URL(req.url);
-    const targetUrl = TARGET_BASE + url.pathname + url.search;
+    let targetPath = url.pathname;
+    
+    // اگر مسیر با /mypath2025 شروع نشد، درستش کن
+    if (!targetPath.startsWith("/mypath2025")) {
+      targetPath = "/mypath2025" + (targetPath === "/" ? "" : targetPath);
+    }
+
+    const targetUrl = TARGET_BASE + targetPath + url.search;
 
     const headers = new Headers();
-    
-    // مهم: Host اصلی Vercel رو به Host مورد انتظار Xray تغییر بده
     for (const [key, value] of req.headers) {
       const k = key.toLowerCase();
-      
       if (["connection", "keep-alive", "upgrade", "te", "trailer", 
            "transfer-encoding", "proxy-authorization", "x-vercel-"].includes(k)) {
         continue;
       }
-      
-      // Host رو به هاست مورد انتظار Xray تغییر بده
       if (k === "host") {
-        headers.set("host", "onlygod.vercel.app");
+        headers.set("host", "onlygod.vercel.app");   // دقیقاً مطابق config Xray
         continue;
       }
-      
       headers.set(key, value);
     }
 
@@ -48,10 +46,7 @@ export default async function handler(req) {
       fetchOpts.duplex = "half";
     }
 
-    console.log("Forwarding to:", targetUrl, "with Host: onlygod.vercel.app");
-
     const upstream = await fetch(targetUrl, fetchOpts);
-    
     console.log("Upstream Status:", upstream.status);
 
     const respHeaders = new Headers(upstream.headers);
@@ -62,9 +57,8 @@ export default async function handler(req) {
       status: upstream.status,
       headers: respHeaders,
     });
-
   } catch (err) {
-    console.error("Error:", err);
+    console.error(err);
     return new Response("Proxy Error", { status: 502 });
   }
 }
