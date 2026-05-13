@@ -5,68 +5,50 @@ export const config = {
 const TARGET_BASE = (process.env.TARGET_DOMAIN || "").replace(/\/$/, "");
 
 const STRIP_HEADERS = new Set([
-  "host",
-  "connection",
-  "keep-alive",
-  "proxy-authenticate",
-  "proxy-authorization",
-  "te",
-  "trailer",
-  "transfer-encoding",
-  "upgrade",
-  "forwarded",
-  "x-forwarded-host",
-  "x-forwarded-proto",
-  "x-forwarded-port",
+  "host", "connection", "keep-alive", "proxy-authenticate",
+  "proxy-authorization", "te", "trailer", "transfer-encoding",
+  "upgrade", "forwarded", "x-forwarded-host", "x-forwarded-proto",
+  "x-forwarded-port", "x-vercel-"
 ]);
 
 export default async function handler(req) {
   if (!TARGET_BASE) {
-    return new Response("Service configuration error", { status: 500 });
+    return new Response("Config error", { status: 500 });
   }
 
   try {
     const url = new URL(req.url);
+    // مهم: path رو حفظ کن
     const targetUrl = TARGET_BASE + url.pathname + url.search;
 
     const headers = new Headers();
-    let clientIp = null;
     for (const [key, value] of req.headers) {
       const k = key.toLowerCase();
-      if (STRIP_HEADERS.has(k)) continue;
-      if (k.startsWith("x-vercel-")) continue;
-      if (k === "x-real-ip") { clientIp = value; continue; }
-      if (k === "x-forwarded-for") { if (!clientIp) clientIp = value; continue; }
-      headers.set(k, value);
+      if (STRIP_HEADERS.has(k) || k.startsWith("x-vercel-")) continue;
+      headers.set(key, value);
     }
-    if (clientIp) headers.set("x-forwarded-for", clientIp);
-
-    const method = req.method;
-    const hasBody = method !== "GET" && method !== "HEAD";
 
     const fetchOpts = {
-      method,
+      method: req.method,
       headers,
       redirect: "manual",
+      body: req.body ? req.body : undefined,
+      duplex: req.body ? "half" : undefined,
     };
-    if (hasBody) {
-      fetchOpts.body = req.body;
-      fetchOpts.duplex = "half";
-    }
 
     const upstream = await fetch(targetUrl, fetchOpts);
 
-    const respHeaders = new Headers();
-    for (const [k, v] of upstream.headers) {
-      if (k.toLowerCase() === "transfer-encoding") continue;
-      respHeaders.set(k, v);
-    }
+    const respHeaders = new Headers(upstream.headers);
+    // بعضی هدرهای مشکل‌ساز رو پاک کن
+    respHeaders.delete("transfer-encoding");
+    respHeaders.delete("content-encoding"); // اگر مشکلی دیدی
 
     return new Response(upstream.body, {
       status: upstream.status,
       headers: respHeaders,
     });
   } catch (err) {
-    return new Response("Service temporarily unavailable", { status: 502 });
+    console.error(err);
+    return new Response("Proxy Error", { status: 502 });
   }
 }
